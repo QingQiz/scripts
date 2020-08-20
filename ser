@@ -2,84 +2,197 @@
 
 import os
 import json
-import socket
-import argparse
+import argh
 
-default_config = os.environ['HOME'] + '/.config/ser.json'
-
-parse = argparse.ArgumentParser()
-
-remote = parse.add_argument_group('remote options')
-remote.add_argument(
-    'ser', nargs='?',
-    help='alias of server'
-)
-remote.add_argument(
-    '-c', '--config', nargs=1,
-    help='select config file'
-)
-remote.add_argument(
-    '-m', '--monitors', nargs=1,
-    help='Select monitors to use.\nexample: ser NAME -mm -m 1,2,3'
-)
-remote.add_argument(
-    '-s', '--share', nargs=1,
-    help='select directory to share, default: ~'
-)
-
-manage = parse.add_argument_group('manage server list')
-manage.add_argument(
-    '--new', nargs=1,
-    help='add a new server to list'
-)
-manage.add_argument(
-    '--alias', nargs=1,
-    help='set server alias'
-)
-manage.add_argument(
-    '--addr', nargs=1,
-    help='server address'
-)
-manage.add_argument(
-    '--user', nargs=1,
-    help='set user name'
-)
-manage.add_argument(
-    '--show', action='store_true',
-    help='show all servers',
-)
-manage.add_argument(
-    '--del', nargs='+',
-)
-
-args = parse.parse_args()
+from argh import arg
+from QingQiz import log
+from QingQiz import utils
+from QingQiz import cipher
 
 
-if args.config is None:
-    js = json.load(open(os.environ['HOME'] + '/.config/ser.json'))
-else:
-    js = json.load(open(args.config[0]))
+configPath = os.path.expanduser('~/.local/share/ser.json')
+try:
+    config = json.load(open(configPath))
+except (FileNotFoundError, json.JSONDecodeError):
+    config = {'rdp': {}, 'ssh': {}}
 
 
-if args.ser is not None:
-    name = js.get(args.ser)
-    if name is None:
-        print('Avaliable servers:\n')
-        for i in js:
-            print(i,'\t\t', js.get(i).get('name'))
-        exit(1)
+def saveConfigFile():
+    # backup config file
+    os.system(f'cp {configPath} /tmp')
 
-    ip = socket.gethostbyname(name.get('name'))
-    user = name.get('user')
-    port = '3389' if name.get('port') is None else name.get('port').strip()
+    with open(configPath, 'w') as f:
+        json.dump(config, f)
 
-    cmd = 'rdp -u {} -s -d angel,{} {}'\
-            .format(user, '/home/angel' if args.share is None else args.share[0], ip + ':{}'.format(port))
 
-    if args.monitors is not None:
-        cmd += ' -mm -m ' + args.monitors[0]
+class ConnectToServer():
+    @staticmethod
+    @arg('name', choices=list(config['rdp']), help='server name')
+    @arg('-m', '--monitors', nargs='+', help='monitors to use')
+    @arg('-d', '--directory', default='~', help='directory to share, default: ~')
+    @arg('-p', '--port', help='server port')
+    @arg('-u', '--user', help='username')
+    @arg('--password', help='password')
+    @arg('--sound', default=False, help='enable sound')
+    @arg('--save-password', default=False, help='save password')
+    def rdp(name, **kwargs):
+        """connect to a rdp server"""
+        cnf = config['rdp'][name]
+        # server address
+        assert cnf.get('address')
+        addr = cnf['address']
+        # username, default: $USER
+        user = cnf.get('user') if kwargs['user'] is None else kwargs['user']
+        user = os.environ['USER'] if user is None else user
+        # port, default: 3389
+        port = cnf.get('port') if kwargs['port'] is None else kwargs['port']
+        port = '3389' if port is None else port
+        # shared directory
+        directory = kwargs['directory']
+        directory = os.path.expanduser(directory)
+        directory = os.path.expandvars(directory)
+        directory = os.path.abspath(directory)
 
-    a = os.system(cmd)
-else:
-    # TODO
-    pass
+        # try to read password
+        if kwargs['password'] is None:
+            password = cnf.get('password')
+
+            if password is None:
+                # require server password from stdin
+                password = utils.getpass('server password: ')
+            else:
+                userPass, authRes = utils.auth()
+                assert authRes
+                # decrypt password from config file
+                password = cipher.decrypt(userPass, password)
+        else:
+            if kwargs['password'] == '-':
+                password = utils.getpass('server password: ')
+            else:
+                password = kwargs['password']
+        # save password
+        if kwargs['save_password']:
+            # if not auth
+            if 'userPass' not in locals():
+                userPass, authRes = utils.auth()
+                assert authRes
+            config['rdp'][name]['password'] = cipher.encrypt(userPass, password)
+
+            saveConfigFile()
+
+        """
+        `/u`        username
+        `/v`        server name -> name:port
+        `/f`        fullscreen
+        `/multimon` use multi monitors
+        `/monitors` monitors to use
+        `-floatbar` no floatbar
+        `/drive`    directory to share, format: name:path
+        `/sound`    sound device
+        `/auto-reconnect`   auto reconnect
+        """
+        command = f'xfreerdp /u:{user} /v:{addr}:{port} /p:{password} /f -floatbar'
+        # monitors to use
+        if kwargs['monitors'] is not None:
+            if len(kwargs['monitors']) > 1:
+                command = f'{command} /multimon'
+            command = f'{command} /monitors:{",".join(kwargs["monitors"])}'
+        # alsa sound
+        if kwargs['sound']:
+            command = f'{command} /sound:sys:alsa'
+        # shared directory
+        command = f'{command} /drive:{os.path.basename(directory)},{directory}'
+        # auto reconnect
+        command = f'{command} /auto-reconnect /auto-reconnect-max-retries:20'
+
+        os.system(command + ' &>/dev/null')
+
+    @staticmethod
+    def ssh():
+        return 'not support yet.'
+
+
+class InsertIntoConfig():
+    @arg('name', help='server name')
+    @arg('-a', '--address', required=True, help='server address')
+    @arg('-u', '--user', help='username')
+    @arg('-p', '--port', help='server port')
+    @arg('--password', help='server password')
+    def rdp(name, **kwargs):
+        """insert a rdp server to list"""
+
+        # name exists
+        if name in config['rdp']:
+            # ask for overwriting
+            if not log.yes_or_no(f'config {name} already exists, overwrite anyway?'):
+                log.w('Abort.')
+                exit(0)
+        else:
+            config['rdp'][name] = {}
+        config['rdp'][name]['address'] = kwargs['address']
+        # user name
+        if kwargs['user']:
+            config['rdp'][name]['user'] = kwargs['user']
+        # port
+        if kwargs['port']:
+            config['rdp'][name]['port'] = kwargs['port']
+        # password
+        # `--password -` will read password from stdin
+        if kwargs['password']:
+            userPass, authRes = utils.auth()
+            assert authRes
+
+            if kwargs['password'] == '-':
+                password = utils.getpass('Input Password: ')
+                config['rdp'][name]['password'] = cipher.encrypt(userPass, password)
+            else:
+                config['rdp'][name]['password'] = cipher.encrypt(userPass, kwargs['password'])
+
+        saveConfigFile()
+
+    @staticmethod
+    def ssh():
+        return 'not support yet'
+
+
+class ListServer():
+    @staticmethod
+    def rdp():
+        from rich.console import Console
+        from rich.table import Table
+
+        console = Console()
+
+        table = Table(show_header=True, header_style='bold magenta')
+        table.add_column('Name')
+        table.add_column('Address')
+        table.add_column('Port')
+        table.add_column('username')
+        table.add_column('password')
+
+        for i in config['rdp']:
+            cnf = config['rdp'][i]
+            table.add_row(i
+                         , cnf['address']
+                         , cnf['port'] if cnf.get('port') else '3389'
+                         , cnf['user'] if cnf.get('user') else os.environ['USER']
+                         , '[i]saved password[/i]' if cnf.get('password') else ''
+                         )
+        console.print(table)
+
+    @staticmethod
+    def ssh():
+        return 'nothing yet.'
+
+
+if __name__ == '__main__':
+    parser = argh.ArghParser()
+    parser.add_commands([ConnectToServer.rdp, ConnectToServer.ssh])
+    parser.add_commands([ListServer.rdp, ListServer.ssh]
+                       , namespace='list', help='list all available servers')
+    parser.add_commands([InsertIntoConfig.rdp, InsertIntoConfig.ssh]
+                       , namespace='insert', help='insert a server into config')
+
+    parser.dispatch()
+
+
