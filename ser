@@ -5,9 +5,7 @@ import json
 import argh
 
 from argh import arg
-from QingQiz import log
-from QingQiz import utils
-from QingQiz import cipher
+from QingQiz import log, utils, cipher
 
 
 configPath = os.path.expanduser('~/.local/share/ser.json')
@@ -193,6 +191,13 @@ if __name__ == '__main__':
     parser.add_commands([InsertIntoConfig.rdp, InsertIntoConfig.ssh]
                        , namespace='insert', help='insert a server into config')
 
-    parser.dispatch()
+    try:
+        parser.dispatch()
+    except AssertionError:
+        log.e('auth failed..exit')
+        exit(-1)
+    except (KeyboardInterrupt, EOFError):
+        log.e('Abort.')
+        exit()
 
 
