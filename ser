@@ -29,7 +29,7 @@ class ConnectToServer():
     @staticmethod
     @arg('name', choices=list(config['rdp']), help='server name')
     @arg('-m', '--monitors', nargs='+', help='monitors to use')
-    @arg('-d', '--directory', default='~', help='directory to share, default: ~')
+    @arg('-d', '--directory', default='~', help='directory to share')
     @arg('-p', '--port', help='server port')
     @arg('-u', '--user', help='username')
     @arg('--password', help='password')
