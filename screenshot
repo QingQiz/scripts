@@ -3,6 +3,6 @@
 # s=$( date +%Y-%m-%d-%H-%M-%S.jpg )
 # import -window root ~/Pictures/Screenshots/"$s"
 
-import ~/a.png
-xclip -selection clipboard -t image/png -i ~/a.png
+import /tmp/screenshot.bmp
+xclip -selection clipboard -t image/bmp -i /tmp/screenshot.bmp
 
