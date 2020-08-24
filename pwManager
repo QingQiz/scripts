@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+
+
+import os
+import argh
+
+from argh import arg
+from QingQiz import utils, cipher, log
+
+
+configPath = '~/.local/share/getpw.json'
+
+key, res = utils.auth()
+assert res, 'Authentication Error'
+
+pwl = cipher.loadEncryptJson(configPath, key)
+pwl = {} if pwl is None else pwl
+
+
+def findPw(site, username):
+    import re
+
+    for i in pwl:
+        if re.search(site, i) is None:
+            continue
+        for u in pwl[i]:
+            if username is None or username == u:
+                yield i, u, pwl[i][u]
+
+
+@arg('name', help='password namespace, example: github.com')
+@arg('-u', '--username', help='username')
+@arg('--raw', default=False, help='raw output (csv)')
+def get(name, **kwargs):
+    res = [i for i in findPw(name, kwargs['username'])]
+
+    if len(res) > 5:
+        log.e('too many results')
+
+    if kwargs['raw']:
+        print('namespace,name,password')
+        for i in res:
+            print(i[0], i[1], cipher.decrypt(key, i[2]), sep=',')
+    else:
+        from rich.table import Table
+        from rich.console import Console
+
+        console = Console()
+
+        table = Table(show_header=True, header_style='bold magenta')
+        table.add_column('Namespace')
+        table.add_column('Username')
+        table.add_column('Password')
+
+        for i in res:
+            table.add_row(i[0], i[1], cipher.decrypt(key, i[2]))
+
+        console.clear()
+        console.print()
+        console.print(table)
+
+        try:
+            input('\nEnter to return...')
+        finally:
+            os.system('reset')
+
+
+@arg('name', help='namespace')
+@arg('-u', '--username', required=True, help='username')
+@arg('-p', '--password', default='-', help='password, read from stdin when set to `-`')
+def insert(name, **kwargs):
+    if pwl.get(name) is None:
+        pwl[name] = {}
+
+    if kwargs['password'] == '-':
+        try:
+            a = utils.getpass('Password: ')
+            b = utils.getpass('Password again: ')
+        except (KeyboardInterrupt, EOFError):
+            print()
+            log.e('Abort')
+
+        if a != b:
+            log.e('password not match')
+
+        kwargs['password'] = a
+
+    pwl[name][kwargs['username']] = cipher.encrypt(key, kwargs['password'])
+    cipher.dumpEncryptJson(pwl, configPath, key)
+
+
+@arg('name', help='namespace')
+@arg('-u', '--username', required=True, help='username')
+def generate(name, **kwargs):
+    import string
+    import random
+
+    cho = string.ascii_letters + string.digits + string.punctuation
+    password = ''.join(random.choices(cho, k=16))
+    print('Generated Password:', password)
+
+    try:
+        a = input('\nAccept (Y/n): ').strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        print()
+        log.e('Abort')
+    if not a or a != 'n':
+        insert(name, username=kwargs['username'], password=password)
+
+
+if __name__ == '__main__':
+    parser = argh.ArghParser()
+    parser.add_commands([get, insert, generate])
+
+    parser.dispatch()
+
