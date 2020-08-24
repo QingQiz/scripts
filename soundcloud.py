@@ -68,7 +68,7 @@ def download(resource_info, client_id):
         name = name.replace('"', "'").replace('*', '·')
         name = name.replace('<', '[').replace('>', ']')
         name = name.replace('|', '丨')
-        
+
         metadata = info['publisher_metadata']
 
         transcodings = info['media']['transcodings']
@@ -88,12 +88,15 @@ def download(resource_info, client_id):
         resource = b''.join(netreq.urls_content(urll, s=s))
 
         artwork = info.get('artwork_url')
+
         if artwork:
             artwork = artwork.replace('large', 't500x500')
             r = netreq.url_content(artwork, s=s)
             if r == 'not found':
                 artwork = artwork.replace('t500x500', 'large')
                 r = netreq.url_content(artwork, s=s)
+        else:
+            r = None
 
         yield {
             'title': name,
@@ -125,7 +128,7 @@ def dump_download(downloaded):
     with open(downloaded['title'] + '.mp3', 'wb') as f:
         f.write(downloaded['sound'])
 
-    if len(downloaded['artwork']) < 20:
+    if downloaded['artwork'] is None or len(downloaded['artwork']) < 20:
         return
 
     with open(downloaded['title'] + '.jpg', 'wb') as f:
