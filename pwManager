@@ -13,7 +13,7 @@ configPath = '~/.local/share/getpw.json'
 key, res = utils.auth()
 assert res, 'Authentication Error'
 
-pwl = cipher.loadEncryptJson(configPath, key)
+pwl = cipher.JSON.load(configPath, key)
 pwl = {} if pwl is None else pwl
 
 
@@ -24,7 +24,7 @@ def findPw(site, username):
         if re.search(site, i) is None:
             continue
         for u in pwl[i]:
-            if username is None or username == u:
+            if username is None or username in u:
                 yield i, u, pwl[i][u]
 
 
@@ -42,12 +42,13 @@ def get(name, **kwargs):
         for i in res:
             print(i[0], i[1], cipher.decrypt(key, i[2]), sep=',')
     else:
+        from rich import box
         from rich.table import Table
         from rich.console import Console
 
         console = Console()
 
-        table = Table(show_header=True, header_style='bold magenta')
+        table = Table(show_header=True, header_style='bold')
         table.add_column('Namespace')
         table.add_column('Username')
         table.add_column('Password')
@@ -55,6 +56,15 @@ def get(name, **kwargs):
         for i in res:
             table.add_row(i[0], i[1], cipher.decrypt(key, i[2]))
 
+        table.columns[0].style = "cyan"
+        table.columns[0].header_style = "bold cyan"
+        table.columns[1].style = "blue"
+        table.columns[1].header_style = "bold blue"
+        table.columns[2].style = "red"
+        table.columns[2].header_style = "bold red"
+        table.row_styles = ['none', 'dim']
+        table.border_style = 'bright_yellow'
+        table.box = box.SIMPLE
         console.clear()
         console.print()
         console.print(table)
@@ -86,7 +96,7 @@ def insert(name, **kwargs):
         kwargs['password'] = a
 
     pwl[name][kwargs['username']] = cipher.encrypt(key, kwargs['password'])
-    cipher.dumpEncryptJson(pwl, configPath, key)
+    cipher.JSON.dump(pwl, configPath, key)
 
 
 @arg('name', help='namespace')
@@ -108,9 +118,26 @@ def generate(name, **kwargs):
         insert(name, username=kwargs['username'], password=password)
 
 
+@arg('name', help='namespace')
+@arg('-u', '--username', required=True, help='username')
+def delete(name, **kwargs):
+    res = [i for i in findPw(name, kwargs['username'])]
+
+    if len(res) > 1:
+        log.e('more than one')
+    if len(res) == 0:
+        log.e('now found')
+
+    del pwl[name][kwargs['username']]
+
+    if pwl[name] == {}:
+        del pwl[name]
+
+    cipher.JSON.dump(pwl, configPath, key)
+
+
 if __name__ == '__main__':
     parser = argh.ArghParser()
-    parser.add_commands([get, insert, generate])
+    parser.add_commands([get, insert, generate, delete])
 
     parser.dispatch()
-
