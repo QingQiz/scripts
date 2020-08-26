@@ -1,38 +1,52 @@
 #!/usr/bin/env python3
 
-
-import os
 import argh
 
 from argh import arg
 from QingQiz import utils, cipher, log
 
 
-configPath = '~/.local/share/getpw.json'
+class Config():
+    def __init__(self, path):
+        self._path = path
+        self._content = None
+        self._key = None
 
-key, res = utils.auth()
-assert res, 'Authentication Error'
+    @property
+    def key(self):
+        if self._key is None:
+            self._key, res = utils.auth()
+            assert res, 'Authentication Error'
+        return self._key
 
-pwl = cipher.JSON.load(configPath, key)
-pwl = {} if pwl is None else pwl
+    @property
+    def pwl(self):
+        if self._content is None:
+            self._content = cipher.JSON.load(self._path, self.key)
+            self._content = self._content if self._content else {}
+        return self._content
 
+    def find(self, site, username):
+        import re
 
-def findPw(site, username):
-    import re
+        for i in self.pwl:
+            if re.search(site, i) is None:
+                continue
+            for u in self.pwl[i]:
+                if username is None or username in u:
+                    yield i, u, self.pwl[i][u]
 
-    for i in pwl:
-        if re.search(site, i) is None:
-            continue
-        for u in pwl[i]:
-            if username is None or username in u:
-                yield i, u, pwl[i][u]
+    def save(self):
+        if self._content is None:
+            self.pwl
+        cipher.JSON.dump(self._content, self._path, self._key)
 
 
 @arg('name', help='password namespace, example: github.com')
 @arg('-u', '--username', help='username')
 @arg('--raw', default=False, help='raw output (csv)')
 def get(name, **kwargs):
-    res = [i for i in findPw(name, kwargs['username'])]
+    res = [i for i in config.find(name, kwargs['username'])]
 
     if len(res) > 5:
         log.e('too many results')
@@ -40,7 +54,7 @@ def get(name, **kwargs):
     if kwargs['raw']:
         print('namespace,name,password')
         for i in res:
-            print(i[0], i[1], cipher.decrypt(key, i[2]), sep=',')
+            print(i[0], i[1], cipher.decrypt(config.key, i[2]), sep=',')
     else:
         from rich import box
         from rich.table import Table
@@ -54,7 +68,7 @@ def get(name, **kwargs):
         table.add_column('Password')
 
         for i in res:
-            table.add_row(i[0], i[1], cipher.decrypt(key, i[2]))
+            table.add_row(i[0], i[1], cipher.decrypt(config.key, i[2]))
 
         table.columns[0].style = "cyan"
         table.columns[0].header_style = "bold cyan"
@@ -72,6 +86,7 @@ def get(name, **kwargs):
         try:
             input('\nEnter to return...')
         finally:
+            import os
             os.system('reset')
 
 
@@ -79,8 +94,8 @@ def get(name, **kwargs):
 @arg('-u', '--username', required=True, help='username')
 @arg('-p', '--password', default='-', help='password, read from stdin when set to `-`')
 def insert(name, **kwargs):
-    if pwl.get(name) is None:
-        pwl[name] = {}
+    if config.pwl.get(name) is None:
+        config.pwl[name] = {}
 
     if kwargs['password'] == '-':
         try:
@@ -95,8 +110,9 @@ def insert(name, **kwargs):
 
         kwargs['password'] = a
 
-    pwl[name][kwargs['username']] = cipher.encrypt(key, kwargs['password'])
-    cipher.JSON.dump(pwl, configPath, key)
+    config.pwl[name][kwargs['username']] = cipher.encrypt(
+            config.key, kwargs['password'])
+    config.save()
 
 
 @arg('name', help='namespace')
@@ -121,23 +137,24 @@ def generate(name, **kwargs):
 @arg('name', help='namespace')
 @arg('-u', '--username', required=True, help='username')
 def delete(name, **kwargs):
-    res = [i for i in findPw(name, kwargs['username'])]
+    res = [i for i in config.find(name, kwargs['username'])]
 
     if len(res) > 1:
         log.e('more than one')
     if len(res) == 0:
-        log.e('now found')
+        log.e('not found')
 
-    del pwl[name][kwargs['username']]
+    del config.pwl[name][kwargs['username']]
 
-    if pwl[name] == {}:
-        del pwl[name]
+    if config.pwl[name] == {}:
+        del config.pwl[name]
 
-    cipher.JSON.dump(pwl, configPath, key)
+    config.save()
 
 
 if __name__ == '__main__':
+    config = Config('~/.local/share/getpw.json')
+
     parser = argh.ArghParser()
     parser.add_commands([get, insert, generate, delete])
-
     parser.dispatch()
