@@ -132,6 +132,8 @@ def generate(name, **kwargs):
         log.e('Abort')
     if not a or a != 'n':
         insert(name, username=kwargs['username'], password=password)
+    else:
+        log.e('Abort')
 
 
 @arg('name', help='namespace')

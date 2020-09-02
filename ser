@@ -111,6 +111,7 @@ class ConnectToServer():
 
 
 class InsertIntoConfig():
+    @staticmethod
     @arg('name', help='server name')
     @arg('-a', '--address', required=True, help='server address')
     @arg('-u', '--user', help='username')
