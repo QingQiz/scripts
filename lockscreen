@@ -21,8 +21,10 @@ pic='/tmp/screenlock.png'
 # screenshot
 import -window root $pic
 
+xset dpms 10 0 0
+
 # lock screen
-i3lock \
+i3lock -n \
     -i $pic \
     --insidecolor=$insidecolor \
     --ringcolor=$ringcolor \
@@ -41,3 +43,5 @@ i3lock \
     --wrongtext='' \
     --verifcolor="$verifcolor" \
     --noinputtext=''
+
+xset dpms 1800 0 0
