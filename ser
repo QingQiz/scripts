@@ -89,8 +89,10 @@ class ConnectToServer():
         `/drive`    directory to share, format: name:path
         `/sound`    sound device
         `/auto-reconnect`   auto reconnect
+        `/port`     server port
+        `/cert:[deny,ignore,...]`
         """
-        command = f'xfreerdp /u:{user} /v:{addr}:{port} /p:{password} /f -floatbar'
+        command = f'xfreerdp /u:{user} /v:{addr} /port:{port} /p:{password} /f /dynamic-resolution'
         # monitors to use
         if kwargs['monitors'] is not None:
             if len(kwargs['monitors']) > 1:
@@ -104,7 +106,7 @@ class ConnectToServer():
         # auto reconnect
         command = f'{command} /auto-reconnect /auto-reconnect-max-retries:20'
 
-        os.system(command + ' &>/dev/null')
+        os.system(command)
 
     @staticmethod
     def ssh():
