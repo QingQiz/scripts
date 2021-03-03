@@ -192,9 +192,52 @@ def update(**kwargs):
         log.e('unsupported config type')
 
 
+@arg('-n', '--namespace', help='namespace, example: github.com', default='')
+@arg('-u', '--username', help='username', default=None)
+@arg('--raw', default=False, help='raw output (csv)')
+def list(**kwargs):
+    """list all namespaces and accounts"""
+    res = [i for i in config.find(kwargs['namespace'], kwargs['username'])]
+
+    if kwargs['raw']:
+        print('namespace,name,password')
+        for i in res:
+            print(i[0], i[1], sep=',')
+    else:
+        from rich import box
+        from rich.table import Table
+        from rich.console import Console
+
+        console = Console()
+
+        table = Table(show_header=True, header_style='bold')
+        table.add_column('Namespace')
+        table.add_column('Username')
+
+        for i in res:
+            table.add_row(i[0], i[1])
+
+        table.columns[0].style = "cyan"
+        table.columns[0].header_style = "bold cyan"
+        table.columns[1].style = "blue"
+        table.columns[1].header_style = "bold blue"
+        table.row_styles = ['none', 'dim']
+        table.border_style = 'bright_yellow'
+        table.box = box.SIMPLE
+        console.clear()
+        console.print()
+        console.print(table)
+
+        try:
+            input('\nEnter to return...')
+        finally:
+            import os
+            os.system('reset')
+
+
 if __name__ == '__main__':
     config = Config('~/.local/share/getpw.json')
 
     parser = argh.ArghParser()
-    parser.add_commands([get, insert, generate, delete, update])
+    parser.add_commands([get, insert, generate, delete, update, list])
     parser.dispatch()
