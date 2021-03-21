@@ -119,12 +119,17 @@ def insert(name, **kwargs):
 
 @arg('name', help='namespace')
 @arg('-u', '--username', required=True, help='username')
+@arg('-l', '--level', default=3, help='password security level')
 def generate(name, **kwargs):
     """generate a password"""
     import string
     import random
 
-    cho = string.ascii_letters + string.digits + string.punctuation
+    characters = [string.digits, string.ascii_letters, string.punctuation]
+    cho = []
+    for i in range(kwargs['level']):
+        cho += characters[i]
+
     password = ''.join(random.choices(cho, k=16))
     print('Generated Password:', password)
 
